@@ -11,18 +11,26 @@ class SlideshowScreen extends StatefulWidget {
   List mediaList;
   final bool mute;
   final int splitCount;
-  // final String orientation;
-  final double rotationAngle;
+  double rotationAngle;
   final int duration;
 
   SlideshowScreen({
     required this.mediaList,
     required this.mute,
     required this.splitCount,
-    // required this.orientation,
     required this.rotationAngle,
     required this.duration,
   });
+
+  static Future<void> saveRotationAngle(double rotationAngle) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setDouble('rotationAngle', rotationAngle);
+  }
+
+  static Future<double?> loadRotationAngle() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble('rotationAngle');
+  }
 
   @override
   _SlideshowScreenState createState() => _SlideshowScreenState();
@@ -37,10 +45,15 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
   @override
   void initState() {
     super.initState();
-    _pageControllers =
-        List.generate(widget.splitCount, (index) => PageController());
-    // loadSavedImagePaths();
+    _pageControllers = List.generate(widget.splitCount, (index) => PageController());
+    loadSavedImagePaths();
+    SlideshowScreen.loadRotationAngle().then((savedAngle) {
+    setState(() {
+      widget.rotationAngle = savedAngle ?? 0.0;
+    });
+  });
     _startSlideshow();
+     
   }
 
   void loadSavedImagePaths() async {
@@ -52,7 +65,7 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
   }
 
   void _startSlideshow() async {
-    Timer.periodic(Duration(seconds: 1), (Timer timer) async {
+    Timer.periodic(const Duration(seconds: 1), (Timer timer) async {
       if (_currentPage < widget.mediaList.length - 1) {
         _currentPage++;
       } else {
@@ -76,7 +89,7 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
       for (var i = 0; i < widget.splitCount; i++) {
         _pageControllers[i].animateToPage(
           _currentPage % widget.mediaList.length,
-          duration: Duration(milliseconds: 500),
+          duration: const Duration(milliseconds: 500),
           curve: Curves.easeInOut,
         );
       }
@@ -98,7 +111,7 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
     for (var i = 0; i < widget.splitCount; i++) {
       _pageControllers[i].animateToPage(
         _currentPage % widget.mediaList.length,
-        duration: Duration(milliseconds: 500),
+        duration: const Duration(milliseconds: 500),
         curve: Curves.easeInOut,
       );
     }
@@ -163,10 +176,6 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
       },
     );
 
-    // Check the current device orientation
-    final Orientation currentOrientation = MediaQuery.of(context).orientation;
-
-    // If in landscape orientation, arrange splits in a row
     return RotatedBox(
       quarterTurns: (widget.rotationAngle / (pi / 2)).round(),
       child: GestureDetector(
@@ -176,7 +185,7 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
             builder: (context) => SelectionScreen(),
           ),
         ),
-        child:Column(
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: _buildCarousels(splitMediaList),
         ),
@@ -213,7 +222,7 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
                     ),
                   );
                 } else {
-                  return Center(
+                  return const Center(
                     child: CircularProgressIndicator(),
                   );
                 }
