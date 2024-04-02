@@ -166,7 +166,7 @@ class _CodeEntryPageState extends State<CodeEntryPage> {
                                                     _submitCode(_codeController.text);
                                                   },
                                                   style: ElevatedButton.styleFrom(
-                                                    primary: Colors.blue, // Set the button color
+                                                    backgroundColor: Colors.blue, // Set the button color
                                                   ),
                                                   child: Text("Submit", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                                                 ),
