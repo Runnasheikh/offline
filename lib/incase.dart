@@ -867,4 +867,136 @@
 //   //       ),
 //   //     ),
 //   //   );
-//   // }
+//   // }]
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:slideshow_kiosk/main.dart';
+import 'package:video_player/video_player.dart';
+
+class SlideshowScreen extends StatefulWidget {
+  final List<String> mediaList;
+  final bool mute;
+  final int splitCount;
+  double rotationAngle;
+  final int duration;
+
+  SlideshowScreen({
+    Key? key,
+    required this.mediaList,
+    required this.mute,
+    required this.splitCount,
+    required this.rotationAngle,
+    required this.duration,
+  }) : super(key: key);
+
+  static Future<void> saveRotationAngle(double rotationAngle) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setDouble('rotationAngle', rotationAngle);
+  }
+
+  static Future<double?> loadRotationAngle() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble('rotationAngle');
+  }
+
+  @override
+  _SlideshowScreenState createState() => _SlideshowScreenState();
+}
+
+class _SlideshowScreenState extends State<SlideshowScreen> {
+  final Map<String, VideoPlayerController> _videoControllers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    loadSavedImagePaths();
+    SlideshowScreen.loadRotationAngle().then((savedAngle) {
+      setState(() {
+        widget.rotationAngle = savedAngle ?? 0.0;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    for (var controller in _videoControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void loadSavedImagePaths() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String>? savedPaths = prefs.getStringList('imagePaths');
+    if (savedPaths != null && savedPaths.isNotEmpty) {
+      setState(() {
+        widget.mediaList.addAll(savedPaths);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RotatedBox(
+      quarterTurns: (widget.rotationAngle / (pi / 2)).round(),
+      child: GestureDetector(
+        onLongPress: () => Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const SelectionScreen(),
+          ),
+        ),
+        child: _buildMediaWidget(widget.mediaList.first),
+      ),
+    );
+  }
+
+  Widget _buildMediaWidget(String mediaPath) {
+    if (mediaPath.endsWith('.mp4')) {
+      return FutureBuilder<VideoPlayerController>(
+        future: _initializeVideoController(mediaPath),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done &&
+              snapshot.hasData) {
+            return Center(
+              child: AspectRatio(
+                aspectRatio: snapshot.data!.value.aspectRatio,
+                child: VideoPlayer(snapshot.data!),
+              ),
+            );
+          } else {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+        },
+      );
+    } else {
+      return Image.file(File(mediaPath));
+    }
+  }
+
+ Future<VideoPlayerController> _initializeVideoController(String videoPath) async {
+  if (!_videoControllers.containsKey(videoPath)) {
+    final controller = VideoPlayerController.file(File(videoPath));
+    await controller.initialize();
+    controller.setVolume(widget.mute ? 0 : 1);
+    controller.setLooping(true);
+    controller.addListener(() {
+      if (controller.value.position >= controller.value.duration) {
+        // Ensure the video loops back to the beginning
+        controller.seekTo(Duration.zero);
+      }
+    });
+    // Start playing the video immediately
+    await controller.play();
+    _videoControllers[videoPath] = controller;
+  }
+  return _videoControllers[videoPath]!;
+}
+
+}

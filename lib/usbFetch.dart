@@ -5,6 +5,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class PermissionHandlerWidget extends StatefulWidget {
+  const PermissionHandlerWidget({Key? key}) : super(key: key);
+
   @override
   _PermissionHandlerWidgetState createState() =>
       _PermissionHandlerWidgetState();
@@ -32,11 +34,11 @@ class _PermissionHandlerWidgetState extends State<PermissionHandlerWidget> {
         context: context, // Use context provided by StatefulWidget
         builder: (BuildContext context) {
           return AlertDialog(
-            title: Text('Permission Denied'),
-            content: Text('Please grant storage permission to access images.'),
+            title: const Text('Permission Denied'),
+            content: const Text('Please grant storage permission to access images.'),
             actions: <Widget>[
               ElevatedButton(
-                child: Text('OK'),
+                child: const Text('OK'),
                 onPressed: () {
                   Navigator.of(context).pop();
                 },
@@ -85,9 +87,9 @@ class _PermissionHandlerWidgetState extends State<PermissionHandlerWidget> {
               onPressed: () {
                 requestPermission();
               },
-              child: Text('Request Permission'),
+              child: const Text('Request Permission'),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             _imagePaths.isNotEmpty
                 ? Expanded(
                     child: ListView.builder(
@@ -99,7 +101,7 @@ class _PermissionHandlerWidgetState extends State<PermissionHandlerWidget> {
                       },
                     ),
                   )
-                : Text('No images to display'),
+                : const Text('No images to display'),
           ],
         ),
       ),

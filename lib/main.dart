@@ -1,21 +1,21 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_manager/file_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:slideshow_kiosk/code.dart';
 import 'package:slideshow_kiosk/slideshow_screen.dart';
-import 'package:slideshow_kiosk/usbFetch.dart';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:lottie/lottie.dart';
+import 'package:path/path.dart' as path;
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 List<String> mediaList = [];
@@ -24,6 +24,8 @@ int splitCount = 1;
 double angle = 0;
 
 class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -42,14 +44,14 @@ class MyApp extends StatelessWidget {
                       // Check if there are images in the slideshow
                       return SlideshowScreen(
                         mediaList: snapshot.data!,
-                        mute: false,
+                        mute: true,
                         splitCount: splitCount,
                         rotationAngle: angle,
                         duration: 5,
                       );
                     } else {
                       // If there are no images, show SelectionScreen
-                      return SelectionScreen();
+                      return const SelectionScreen();
                     }
                   } else {
                     return const Scaffold(
@@ -65,7 +67,8 @@ class MyApp extends StatelessWidget {
               return CodeEntryPage(onCodeEntered: () {
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (context) => SelectionScreen()),
+                  MaterialPageRoute(
+                      builder: (context) => const SelectionScreen()),
                 );
               });
             }
@@ -81,13 +84,13 @@ class MyApp extends StatelessWidget {
     );
   }
 
-// Change this method name
+  // Change this method name
   Future<bool> hasValidCode() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     return prefs.getBool('isCodeValidated') ?? false;
   }
 
-  Future<bool> hasSavedImagePaths() async {
+  Future<bool> hasSavedImagePaths() async { 
     SharedPreferences prefs = await SharedPreferences.getInstance();
     List<String>? savedPaths = prefs.getStringList('imagePaths');
     splitCount = prefs.getInt('splitCount') ?? 1;
@@ -103,6 +106,8 @@ class MyApp extends StatelessWidget {
 }
 
 class SelectionScreen extends StatefulWidget {
+  const SelectionScreen({Key? key}) : super(key: key);
+
   @override
   State<SelectionScreen> createState() => _SelectionScreenState();
 }
@@ -112,14 +117,15 @@ class _SelectionScreenState extends State<SelectionScreen> {
   late ScrollController _scrollController;
 
   String orientation = "Normal";
-  TextEditingController _countController = TextEditingController();
-  TextEditingController _durationController = TextEditingController();
+  final TextEditingController _countController = TextEditingController();
+  final TextEditingController _durationController = TextEditingController();
   int duration = 5;
   bool isUsbConnected = false;
 
   @override
   void initState() {
     super.initState();
+    selectStorage(context);
     requestPermission();
     loadSavedImagePaths();
     _initUsbDetection();
@@ -133,18 +139,51 @@ class _SelectionScreenState extends State<SelectionScreen> {
     });
   }
 
-  void _initUsbDetection() async {
-    List<UsbDevice> devices = await UsbSerial.listDevices();
+  List<String> storageNames = [];
+
+ void _initUsbDetection() async {
+  List<UsbDevice> devices = await UsbSerial.listDevices();
+  setState(() {
+    isUsbConnected = devices.isNotEmpty;
+  });
+
+  if (isUsbConnected) {
+    Fluttertoast.showToast(
+      msg: "USB Connected",
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.TOP_LEFT,
+     
+      backgroundColor: Colors.green,
+      textColor: Colors.white,
+      fontSize: 16.0,
+    );
+  }
+
+  UsbSerial.usbEventStream?.listen((UsbEvent event) {
     setState(() {
-      isUsbConnected = devices.isNotEmpty;
+      isUsbConnected = event.event == UsbEvent.ACTION_USB_ATTACHED;
     });
 
-    UsbSerial.usbEventStream?.listen((UsbEvent event) {
-      setState(() {
-        isUsbConnected = event.event == UsbEvent.ACTION_USB_ATTACHED;
-      });
-    });
-  }
+    if (isUsbConnected) {
+      Fluttertoast.showToast(
+        msg: "USB has been Connected",
+        
+        
+        backgroundColor: Colors.green,
+       
+      );
+    } else {
+      Fluttertoast.showToast(
+        msg: "USB Disconnected",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.CENTER,
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
+        fontSize: 16.0,
+      );
+    }
+  });
+}
 
   Future<void> requestPermission() async {
     // Request storage permission
@@ -153,18 +192,19 @@ class _SelectionScreenState extends State<SelectionScreen> {
     if (status.isGranted || statuss.isGranted) {
       // Permission granted, fetch images
       print("granted per");
-      fetchImages();
+      selectStorage(context);
     } else {
       // Permission denied
       showDialog(
         context: context, // Use context provided by StatefulWidget
         builder: (BuildContext context) {
           return AlertDialog(
-            title: Text('Permission Denied'),
-            content: Text('Please grant storage permission to access images.'),
+            title: const Text('Permission Denied'),
+            content:
+                const Text('Please grant storage permission to access images.'),
             actions: <Widget>[
               ElevatedButton(
-                child: Text('OK'),
+                child: const Text('OK'),
                 onPressed: () {
                   Navigator.of(context).pop();
                 },
@@ -176,42 +216,87 @@ class _SelectionScreenState extends State<SelectionScreen> {
     }
   }
 
-  Future<void> fetchImages() async {
-    List<Directory>? externalStorageDirectories =
-        await getExternalStorageDirectories();
-    if (externalStorageDirectories!.isNotEmpty) {
-      // Directory mediaDirectory = Directory("/storage/8015-2A82/Media");
-      Directory mediaDirectory = Directory("/storage/FDCC-E07E/Media");
+ Future<void> selectStorage(BuildContext context) async {
+  final List<Directory> storageList = await FileManager.getStorageList();
+  bool isMediaFound = false;
+
+  for (final Directory directory in storageList) {
+    final basename = path.basename(directory.path);
+    if (basename != '0')
+     {
+      Directory mediaDirectory = Directory("/storage/$basename/Media");
       if (await mediaDirectory.exists()) {
         List<FileSystemEntity> files = mediaDirectory.listSync();
         List<String> imagePaths = files
             .where((entity) =>
                 entity is File &&
-                    (entity.path.toLowerCase().endsWith(".png") ||
-                        entity.path.toLowerCase().endsWith(".jpg") ||
-                        entity.path.toLowerCase().endsWith(".jpeg") ||
-                        entity.path.toLowerCase().endsWith(".mp4")) ||
+                (entity.path.toLowerCase().endsWith(".png") ||
+                    entity.path.toLowerCase().endsWith(".jpg") ||
+                    entity.path.toLowerCase().endsWith(".jpeg") ||
+                    entity.path.toLowerCase().endsWith(".mp4")) ||
                 entity.path.toLowerCase().endsWith("image.png"))
             .map((file) => file.path)
             .toList();
+
+        await copyFilesToLocalDirectory(imagePaths);
         saveImagePathsToPrefs(imagePaths);
         setState(() {
           _imagePaths = imagePaths;
-          print("Your image files: $imagePaths");
+          print("Your image files from $basename: $imagePaths");
         });
+        isMediaFound = true;
+        break;
+      }
+    }
+  }
+
+  if (!isMediaFound) {
+    // If no 'Media' folder is found in the listed storage, check the emulated directory
+    Directory emulatedMediaDirectory = Directory("/storage/emulated/0/Media");
+    if (await emulatedMediaDirectory.exists()) {
+      List<FileSystemEntity> files = emulatedMediaDirectory.listSync();
+      List<String> imagePaths = files
+          .where((entity) =>
+              entity is File &&
+              (entity.path.toLowerCase().endsWith(".png") ||
+                  entity.path.toLowerCase().endsWith(".jpg") ||
+                  entity.path.toLowerCase().endsWith(".jpeg") ||
+                  entity.path.toLowerCase().endsWith(".mp4")) ||
+              entity.path.toLowerCase().endsWith("image.png"))
+          .map((file) => file.path)
+          .toList();
+
+      saveImagePathsToPrefs(imagePaths);
+      setState(() {
+        _imagePaths = imagePaths;
+        print("Your image files from emulated/0: $imagePaths");
+      });
+    }
+  }
+}
+
+
+  Future<void> copyFilesToLocalDirectory(List<String> filePaths) async {
+    final Directory localDirectory = Directory("/storage/emulated/0/Media");
+    if (!(await localDirectory.exists())) {
+      await localDirectory.create(recursive: true);
+    }
+
+    for (String filePath in filePaths) {
+      final File file = File(filePath);
+      final String newFilePath =
+          path.join(localDirectory.path, path.basename(filePath));
+
+      if (!(await File(newFilePath).exists())) {
+        await file.copy(newFilePath);
+        print('File copied to $newFilePath');
+      } else {
+        print('File already exists at $newFilePath');
       }
     }
   }
 
   Future<void> clearImages() async {
-    // var res = await Permission.manageExternalStorage.request();
-    // var ress = await Permission.storage.request();
-    // var resss = await Permission.storage.request();
-    // var re = await Permission.videos.request();
-    // if (ress.isGranted) {
-    //   print("permission granted");
-    //   Navigator.push(context,
-    //       MaterialPageRoute(builder: (_) => PermissionHandlerWidget()));
     SharedPreferences prefs = await SharedPreferences.getInstance();
     prefs.remove('imagePaths');
 
@@ -235,7 +320,7 @@ class _SelectionScreenState extends State<SelectionScreen> {
         body: Stack(
           children: [
             Positioned.fill(
-              child: Lottie.asset('assets/space.json', fit: BoxFit.cover),
+              child: Lottie.asset('assets/bg.json', fit: BoxFit.cover),
             ),
             Center(
               child: SingleChildScrollView(
@@ -255,45 +340,10 @@ class _SelectionScreenState extends State<SelectionScreen> {
                       const SizedBox(height: 20),
                       Text(
                         isUsbConnected ? 'USB Connected' : 'USB not connected',
-                        style: TextStyle(fontSize: 20, color: Colors.white),
+                        style:
+                            const TextStyle(fontSize: 20, color: Colors.white),
                       ),
                       const SizedBox(height: 32),
-                      // GestureDetector(
-                      //   onTap: () async {
-                      //     FilePickerResult? result =
-                      //         await FilePicker.platform.pickFiles(
-                      //       type: FileType.custom,
-                      //       allowedExtensions: ['jpg', 'jpeg', 'png', 'mp4'],
-                      //       allowMultiple: true,
-                      //     );
-
-                      //     if (result != null && result.paths != null) {
-                      //       mediaList.addAll(result.paths!
-                      //           .where((path) => path != null)
-                      //           .cast<String>());
-                      //       saveImagePathsToPrefs(mediaList);
-                      //       print('Selected Files: $mediaList');
-                      //     } else {
-                      //       print('No files selected');
-                      //     }
-                      //   },
-                      //   child: ClipRRect(
-                      //     borderRadius: BorderRadius.circular(12),
-                      //     child: Container(
-                      //       padding: const EdgeInsets.all(18),
-                      //       color: Colors.green,
-                      //       alignment: Alignment.center,
-                      //       width: double.infinity,
-                      //       child: Text(
-                      //         "Select Files",
-                      //         style: Theme.of(context)
-                      //             .textTheme
-                      //             .headline6!
-                      //             .copyWith(color: Colors.white),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
                       const SizedBox(height: 10),
                       TextFormField(
                         controller: _durationController,
@@ -325,7 +375,7 @@ class _SelectionScreenState extends State<SelectionScreen> {
                                 "Mute Video",
                                 style: Theme.of(context)
                                     .textTheme
-                                    .headline6!
+                                    .titleLarge!
                                     .copyWith(color: Colors.black),
                               ),
                               Switch(
@@ -348,7 +398,7 @@ class _SelectionScreenState extends State<SelectionScreen> {
                             onTap: () => showDialog(
                               context: context,
                               builder: (context) => AlertDialog(
-                                title: Text("Select Split"),
+                                title: const Text("Select Split"),
                                 actions: [
                                   TextButton(
                                     onPressed: () {
@@ -357,8 +407,9 @@ class _SelectionScreenState extends State<SelectionScreen> {
                                     },
                                     child: Text(
                                       "1",
-                                      style:
-                                          Theme.of(context).textTheme.headline6,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleLarge,
                                     ),
                                   ),
                                   TextButton(
@@ -368,8 +419,9 @@ class _SelectionScreenState extends State<SelectionScreen> {
                                     },
                                     child: Text(
                                       "2",
-                                      style:
-                                          Theme.of(context).textTheme.headline6,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleLarge,
                                     ),
                                   ),
                                   TextButton(
@@ -379,8 +431,9 @@ class _SelectionScreenState extends State<SelectionScreen> {
                                     },
                                     child: Text(
                                       "3",
-                                      style:
-                                          Theme.of(context).textTheme.headline6,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleLarge,
                                     ),
                                   ),
                                 ],
@@ -395,7 +448,7 @@ class _SelectionScreenState extends State<SelectionScreen> {
                                   "Select Split",
                                   style: Theme.of(context)
                                       .textTheme
-                                      .headline6!
+                                      .titleLarge!
                                       .copyWith(color: Colors.white),
                                 ),
                               ),
@@ -415,7 +468,7 @@ class _SelectionScreenState extends State<SelectionScreen> {
                                             _updateOrientation(0.0);
                                             Navigator.pop(context);
                                           },
-                                          child: Text('Portrait'),
+                                          child: const Text('Portrait'),
                                         ),
                                         ElevatedButton(
                                           onPressed: () {
@@ -436,7 +489,7 @@ class _SelectionScreenState extends State<SelectionScreen> {
                                             _updateOrientation(pi);
                                             Navigator.pop(context);
                                           },
-                                          child: Text('Upside Down'),
+                                          child: const Text('Upside Down'),
                                         ),
                                       ],
                                     ),
@@ -453,7 +506,7 @@ class _SelectionScreenState extends State<SelectionScreen> {
                                   "Orientation",
                                   style: Theme.of(context)
                                       .textTheme
-                                      .headline6!
+                                      .titleLarge!
                                       .copyWith(color: Colors.white),
                                 ),
                               ),
@@ -461,7 +514,7 @@ class _SelectionScreenState extends State<SelectionScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 30),
                       GestureDetector(
                         onTap: () {
                           try {
@@ -491,11 +544,14 @@ class _SelectionScreenState extends State<SelectionScreen> {
                               "Start Slideshow",
                               style: Theme.of(context)
                                   .textTheme
-                                  .headline6!
+                                  .titleLarge!
                                   .copyWith(color: Colors.white),
                             ),
                           ),
                         ),
+                      ),
+                      const SizedBox(
+                        height: 25,
                       ),
                       ElevatedButton(
                         onPressed: () {
@@ -503,19 +559,11 @@ class _SelectionScreenState extends State<SelectionScreen> {
                         },
                         child: const Text("Clear Images"),
                       ),
-                      // ElevatedButton(
-                      //     onPressed: () {
-                      //       Navigator.push(
-                      //           context,
-                      //           MaterialPageRoute(
-                      //               builder: (_) => PermissionHandlerWidget()));
-                      //     },
-                      //     child: Text("go to usb permisson ")),
                       ElevatedButton(
                           onPressed: () {
                             requestPermission();
                           },
-                          child: Text("ask for permission ")),
+                          child: const Text("ask for permission ")),
                     ],
                   ),
                 ),

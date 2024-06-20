@@ -1,26 +1,30 @@
-import 'dart:math';
-
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:slideshow_kiosk/main.dart';
-import 'package:video_player/video_player.dart';
 import 'dart:async';
 import 'dart:io';
 
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_carousel_media_slider/carousel_media.dart';
+import 'package:flutter_carousel_media_slider/flutter_carousel_media_slider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:slideshow_kiosk/main.dart';
+import 'package:video_player/video_player.dart';
+
 class SlideshowScreen extends StatefulWidget {
-  List mediaList;
+  final List<String> mediaList;
   final bool mute;
   final int splitCount;
   double rotationAngle;
   final int duration;
 
   SlideshowScreen({
+    Key? key,
     required this.mediaList,
     required this.mute,
     required this.splitCount,
     required this.rotationAngle,
     required this.duration,
-  });
+  }) : super(key: key);
 
   static Future<void> saveRotationAngle(double rotationAngle) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -38,53 +42,51 @@ class SlideshowScreen extends StatefulWidget {
 
 class _SlideshowScreenState extends State<SlideshowScreen> {
   late List<PageController> _pageControllers;
-  List<VideoPlayerController> _videoControllers = [];
-
+  final Map<String, VideoPlayerController> _videoControllers = {};
   int _currentPage = 0;
+  Timer? _slideshowTimer;
 
   @override
   void initState() {
     super.initState();
-    _pageControllers = List.generate(widget.splitCount, (index) => PageController());
-    loadSavedImagePaths();
+    _pageControllers =
+        List.generate(widget.splitCount, (index) => PageController());
+
     SlideshowScreen.loadRotationAngle().then((savedAngle) {
-    setState(() {
-      widget.rotationAngle = savedAngle ?? 0.0;
+      setState(() {
+        widget.rotationAngle = savedAngle ?? 0.0;
+      });
     });
-  });
     _startSlideshow();
-     
+  }
+
+  @override
+  void dispose() {
+    _stopSlideshow();
+    for (var controller in _videoControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   void loadSavedImagePaths() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     List<String>? savedPaths = prefs.getStringList('imagePaths');
     if (savedPaths != null && savedPaths.isNotEmpty) {
-      widget.mediaList = savedPaths;
+      setState(() {
+        widget.mediaList.addAll(savedPaths);
+      });
     }
   }
 
-  void _startSlideshow() async {
-    Timer.periodic(const Duration(seconds: 1), (Timer timer) async {
-      if (_currentPage < widget.mediaList.length - 1) {
-        _currentPage++;
-      } else {
-        _currentPage = 0;
-      }
+  void _startSlideshow() {
+    _stopSlideshow(); // Ensure previous slideshow is stopped before starting a new one
 
-      String mediaPath = widget.mediaList[_currentPage];
-      if (mediaPath.endsWith('.mp4')) {
-        int duration = await _getVideoDuration(mediaPath);
-        timer.cancel();
-        Timer(Duration(seconds: duration), () {
-          _startSlideshow();
-        });
-      } else {
-        timer.cancel();
-        Timer(Duration(seconds: widget.duration), () {
-          _startSlideshow();
-        });
-      }
+    _slideshowTimer =
+        Timer.periodic(Duration(seconds: widget.duration), (Timer timer) async {
+      setState(() {
+        _currentPage = (_currentPage + 1) % widget.mediaList.length;
+      });
 
       for (var i = 0; i < widget.splitCount; i++) {
         _pageControllers[i].animateToPage(
@@ -96,95 +98,44 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
     });
   }
 
-  void _advanceSlideshow() async {
-    if (_currentPage < widget.mediaList.length - 1) {
-      _currentPage++;
-    } else {
-      _currentPage = 0;
+  void _stopSlideshow() {
+    if (_slideshowTimer != null) {
+      _slideshowTimer!.cancel();
+      _slideshowTimer = null;
     }
-
-    String mediaPath = widget.mediaList[_currentPage];
-    int duration = mediaPath.endsWith('.mp4')
-        ? await _getVideoDuration(mediaPath)
-        : 5; // Default duration for images
-
-    for (var i = 0; i < widget.splitCount; i++) {
-      _pageControllers[i].animateToPage(
-        _currentPage % widget.mediaList.length,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOut,
-      );
+  }
+void _disposeVideoControllers() {
+    for (var controller in _videoControllers.values) {
+      controller.dispose();
     }
-
-    if (mediaPath.endsWith('.mp4')) {
-      // If the media is a video, wait for it to finish playing
-      VideoPlayerController videoController =
-          await _initializeVideoController(mediaPath);
-
-      await _waitForVideoCompletion(videoController);
-      videoController.dispose();
-      _videoControllers.remove(videoController);
-    }
-
-    // Use the actual duration for both images and videos
-    await Future.delayed(Duration(seconds: duration));
+    _videoControllers.clear();
   }
-
-  Future<void> _waitForVideoCompletion(VideoPlayerController controller) async {
-    Completer<void> completer = Completer<void>();
-    controller.addListener(() {
-      if (controller.value.position >= controller.value.duration) {
-        completer.complete();
-      }
-    });
-
-    return completer.future;
-  }
-
-  Future<int> _getVideoDuration(String videoPath) async {
-    final videoController = VideoPlayerController.file(File(videoPath));
-    await videoController.initialize();
-    int duration = videoController.value.duration.inSeconds;
-    videoController.dispose();
-    return duration;
-  }
-
-  Future<VideoPlayerController> _initializeVideoController(
-      String videoPath) async {
-    final controller = VideoPlayerController.file(File(videoPath));
-    await controller.initialize();
-    controller.setVolume(widget.mute ? 0 : 100);
-    controller.setLooping(true);
-    controller.play();
-    _videoControllers.add(controller);
-    return controller;
-  }
-
   @override
   Widget build(BuildContext context) {
-    // Explicitly convert widget.mediaList to List<String>
     final List<List<String>> splitMediaList = List.generate(
       widget.splitCount,
       (index) {
-        List<String> sublist = List<String>.from(
-          (widget.mediaList as List<dynamic>).sublist(
-            index * widget.mediaList.length ~/ widget.splitCount,
+        int start = index * widget.mediaList.length ~/ widget.splitCount;
+        int end = min(
             (index + 1) * widget.mediaList.length ~/ widget.splitCount,
-          ),
-        );
-        return sublist;
+            widget.mediaList.length);
+        return widget.mediaList.sublist(start, end);
       },
     );
 
     return RotatedBox(
       quarterTurns: (widget.rotationAngle / (pi / 2)).round(),
       child: GestureDetector(
-        onLongPress: () => Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => SelectionScreen(),
-          ),
-        ),
+        onLongPress: () {
+          _stopSlideshow(); // Stop the slideshow timer
+          _disposeVideoControllers(); // Dispose video player controllers
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const SelectionScreen(),
+            ),
+          );
+        },
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: _buildCarousels(splitMediaList),
@@ -196,55 +147,42 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
   List<Widget> _buildCarousels(List<List<String>> splitMediaList) {
     return List.generate(
       widget.splitCount,
-      (index) => _buildCarousel(splitMediaList[index], index),
+      (index) {
+        if (index < splitMediaList.length) {
+          return _buildCarousel(splitMediaList[index], index);
+        } else {
+          return Container(); // or any other fallback widget
+        }
+      },
     );
   }
 
   Widget _buildCarousel(List<String> mediaList, int index) {
-    return Expanded(
-      child: PageView.builder(
-        controller: _pageControllers[index],
-        itemCount: mediaList.length,
-        itemBuilder: (context, index) {
-          String mediaPath = mediaList[index];
-          if (mediaPath.endsWith('.mp4')) {
-            return FutureBuilder<VideoPlayerController>(
-              future: _initializeVideoController(mediaPath),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done &&
-                    snapshot.hasData) {
-                  return Center(
-                    child: AspectRatio(
-                      aspectRatio: snapshot.data!.value.aspectRatio,
-                      child: VideoPlayer(
-                        snapshot.data!,
-                      ),
-                    ),
-                  );
-                } else {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-              },
-            );
-          } else {
-            return Image.file(
-              File(mediaPath),
-              // fit: BoxFit.fill,
-            );
-          }
-        },
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    for (var controller in _videoControllers) {
-      controller.dispose();
+    if (mediaList.isEmpty) {
+      return Container(); // or any other fallback widget
     }
-    _pageControllers.forEach((controller) => controller.dispose());
-    super.dispose();
-  }
+
+    List<CarouselMedia> carouselMediaList = mediaList.map((mediaUrl) {
+      return CarouselMedia(
+        mediaName: 'Media $index',
+        mediaUrl: mediaUrl,
+        mediaType: mediaUrl.endsWith('.mp4')
+            ? CarouselMediaType.video
+            : CarouselMediaType.image,
+        carouselImageSource: CarouselImageSource.file,
+      );
+    }).toList();
+
+    return Expanded(
+      child: SizedBox(
+        width: double.infinity,
+        child: FlutterCarouselMediaSlider(
+          carouselMediaList: carouselMediaList,
+          onPageChanged: (index) {
+            debugPrint('Page Changed: $index');
+          },
+        ),
+     ),
+);
+}
 }

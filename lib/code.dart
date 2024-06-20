@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class CodeEntryPage extends StatefulWidget {
   final VoidCallback onCodeEntered;
 
-  CodeEntryPage({required this.onCodeEntered});
+  const CodeEntryPage({Key? key, required this.onCodeEntered}) : super(key: key);
 
   @override
   _CodeEntryPageState createState() => _CodeEntryPageState();
@@ -80,14 +80,14 @@ class _CodeEntryPageState extends State<CodeEntryPage> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Error'),
+          title: const Text('Error'),
           content: Text(message),
           actions: <Widget>[
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
               },
-              child: Text('OK'),
+              child: const Text('OK'),
             ),
           ],
         );
@@ -122,13 +122,13 @@ class _CodeEntryPageState extends State<CodeEntryPage> {
           
           
           children: [
-            FadeInDown( duration: Duration(milliseconds: 1900),child:  Image.asset('assets/background.png',fit: BoxFit.cover)
+            FadeInDown( duration: const Duration(milliseconds: 1900),child:  Image.asset('assets/background.png',fit: BoxFit.cover)
         
            ),
-          SizedBox(height: 40,),
+          const SizedBox(height: 40,),
             Container(
-	                          padding: EdgeInsets.all(8.0),
-	                          decoration: BoxDecoration(
+	                          padding: const EdgeInsets.all(8.0),
+	                          decoration: const BoxDecoration(
 	                            border: Border(bottom: BorderSide(color:  Color.fromRGBO(143, 148, 251, 1)))
 	                          ),
 	                          child: TextField(
@@ -140,7 +140,7 @@ class _CodeEntryPageState extends State<CodeEntryPage> {
 	                            ),
 	                          ),
 	                        ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             // ElevatedButton(
             //   onPressed: () {
             //     // Validate the entered code
@@ -148,18 +148,18 @@ class _CodeEntryPageState extends State<CodeEntryPage> {
             //   },
             //   child: Text('Submit Code'),
             // ),
-            FadeInUp(duration: Duration(milliseconds: 1900), child: Container(
+            FadeInUp(duration: const Duration(milliseconds: 1900), child: Container(
                               height: 50,
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(10),
-                                gradient: LinearGradient(
+                                gradient: const LinearGradient(
                                   colors: [
                                     Color.fromRGBO(143, 148, 251, 1),
                                     Color.fromRGBO(143, 148, 251, .6),
                                   ]
                                 )
                               ),
-                              child: Container(
+                              child: SizedBox(
                           width: double.infinity,
                                                 child: ElevatedButton(
                                                   onPressed: () {
@@ -168,14 +168,14 @@ class _CodeEntryPageState extends State<CodeEntryPage> {
                                                   style: ElevatedButton.styleFrom(
                                                     backgroundColor: Colors.blue, // Set the button color
                                                   ),
-                                                  child: Text("Submit", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                                  child: const Text("Submit", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                                                 ),
                                               ),
                         
                             )
                       ),
-            SizedBox(height: 20),
-            if (isLoading) CircularProgressIndicator(),
+            const SizedBox(height: 20),
+            if (isLoading) const CircularProgressIndicator(),
           ],
         ),
       ),

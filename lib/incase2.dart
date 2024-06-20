@@ -711,3 +711,253 @@
 //     super.dispose();
 //   }
 // }
+ // GestureDetector(
+                      //   onTap: () async {
+                      //     FilePickerResult? result =
+                      //         await FilePicker.platform.pickFiles(
+                      //       type: FileType.custom,
+                      //       allowedExtensions: ['jpg', 'jpeg', 'png', 'mp4'],
+                      //       allowMultiple: true,
+                      //     );
+
+                      //     if (result != null && result.paths != null) {
+                      //       mediaList.addAll(result.paths!
+                      //           .where((path) => path != null)
+                      //           .cast<String>());
+                      //       saveImagePathsToPrefs(mediaList);
+                      //       print('Selected Files: $mediaList');
+                      //     } else {
+                      //       print('No files selected');
+                      //     }
+                      //   },
+                      //   child: ClipRRect(
+                      //     borderRadius: BorderRadius.circular(12),
+                      //     child: Container(
+                      //       padding: const EdgeInsets.all(18),
+                      //       color: Colors.green,
+                      //       alignment: Alignment.center,
+                      //       width: double.infinity,
+                      //       child: Text(
+                      //         "Select Files",
+                      //         style: Theme.of(context)
+                      //             .textTheme
+                      //             .headline6!
+                      //             .copyWith(color: Colors.white),
+                      //       ),
+                      //     ),
+                      //   ),
+                      // ),
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:slideshow_kiosk/main.dart';
+import 'package:video_player/video_player.dart';
+
+class SlideshowScreen extends StatefulWidget {
+  final List<String> mediaList;
+  final bool mute;
+  final int splitCount;
+  double rotationAngle;
+  final int duration;
+
+  SlideshowScreen({
+    Key? key,
+    required this.mediaList,
+    required this.mute,
+    required this.splitCount,
+    required this.rotationAngle,
+    required this.duration,
+  }) : super(key: key);
+
+  static Future<void> saveRotationAngle(double rotationAngle) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setDouble('rotationAngle', rotationAngle);
+  }
+
+  static Future<double?> loadRotationAngle() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble('rotationAngle');
+  }
+
+  @override
+  _SlideshowScreenState createState() => _SlideshowScreenState();
+}
+
+class _SlideshowScreenState extends State<SlideshowScreen> {
+  late List<PageController> _pageControllers;
+  final Map<String, VideoPlayerController> _videoControllers = {};
+  int _currentPage = 0;
+  Timer? _slideshowTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageControllers = List.generate(widget.splitCount, (index) => PageController());
+    loadSavedImagePaths();
+    SlideshowScreen.loadRotationAngle().then((savedAngle) {
+      setState(() {
+        widget.rotationAngle = savedAngle ?? 0.0;
+      });
+    });
+    _startSlideshow();
+  }
+
+  @override
+  void dispose() {
+    _stopSlideshow();
+    for (var controller in _videoControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void loadSavedImagePaths() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String>? savedPaths = prefs.getStringList('imagePaths');
+    if (savedPaths != null && savedPaths.isNotEmpty) {
+      setState(() {
+        widget.mediaList.addAll(savedPaths);
+      });
+    }
+  }
+
+  void _startSlideshow() {
+    _stopSlideshow(); // Ensure previous slideshow is stopped before starting a new one
+
+    _slideshowTimer = Timer.periodic(Duration(seconds: widget.duration), (Timer timer) async {
+      String mediaPath = widget.mediaList[_currentPage];
+
+      if (mediaPath.endsWith('.mp4')) {
+        int duration = await _getVideoDuration(mediaPath);
+        _slideshowTimer?.cancel();
+        _slideshowTimer = Timer(Duration(seconds: duration), () {
+          setState(() {
+            _currentPage = (_currentPage + 1) % widget.mediaList.length;
+          });
+          _startSlideshow();
+        });
+      } else {
+        setState(() {
+          _currentPage = (_currentPage + 1) % widget.mediaList.length;
+        });
+      }
+
+      for (var i = 0; i < widget.splitCount; i++) {
+        _pageControllers[i].animateToPage(
+          _currentPage % widget.mediaList.length,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
+  }
+
+  void _stopSlideshow() {
+    if (_slideshowTimer != null) {
+      _slideshowTimer!.cancel();
+      _slideshowTimer = null;
+    }
+  }
+
+  Future<int> _getVideoDuration(String videoPath) async {
+    if (!_videoControllers.containsKey(videoPath)) {
+      final controller = VideoPlayerController.file(File(videoPath));
+      await controller.initialize();
+      _videoControllers[videoPath] = controller;
+    }
+    return _videoControllers[videoPath]!.value.duration.inSeconds;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<List<String>> splitMediaList = List.generate(
+      widget.splitCount,
+      (index) {
+        List<String> sublist = List<String>.from(
+          (widget.mediaList).sublist(
+            index * widget.mediaList.length ~/ widget.splitCount,
+            (index + 1) * widget.mediaList.length ~/ widget.splitCount,
+          ),
+        );
+        return sublist;
+      },
+    );
+
+    return RotatedBox(
+      quarterTurns: (widget.rotationAngle / (pi / 2)).round(),
+      child: GestureDetector(
+        onLongPress: () => Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const SelectionScreen(),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: _buildCarousels(splitMediaList),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildCarousels(List<List<String>> splitMediaList) {
+    return List.generate(
+      widget.splitCount,
+      (index) => _buildCarousel(splitMediaList[index], index),
+    );
+  }
+
+  Widget _buildCarousel(List<String> mediaList, int index) {
+    return Expanded(
+      child: PageView.builder(
+        controller: _pageControllers[index],
+        itemCount: mediaList.length,
+        itemBuilder: (context, itemIndex) {
+          String mediaPath = mediaList[itemIndex];
+          if (mediaPath.endsWith('.mp4')) {
+            return FutureBuilder<VideoPlayerController>(
+              future: _initializeVideoController(mediaPath),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done &&
+                    snapshot.hasData) {
+                  return Center(
+                    child: AspectRatio(
+                      aspectRatio: snapshot.data!.value.aspectRatio,
+                      child: VideoPlayer(snapshot.data!),
+                    ),
+                  );
+                } else {
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
+              },
+            );
+          } else {
+            return Image.file(File(mediaPath));
+          }
+        },
+      ),
+    );
+  }
+
+  Future<VideoPlayerController> _initializeVideoController(String videoPath) async {
+    final controller = VideoPlayerController.file(File(videoPath));
+    await controller.initialize();
+    controller.setVolume(widget.mute ? 0 : 1);
+    controller.setLooping(false);
+    controller.addListener(() {
+      if (controller.value.position >= controller.value.duration) {
+        controller.seekTo(Duration.zero);
+        controller.pause();
+        print("Disposed video: $videoPath");
+      }
+    });
+    await controller.play();
+    _videoControllers[videoPath] = controller;
+    return controller;
+  }
+}
